@@ -177,17 +177,43 @@ function isApproveWorkflowCommand(command: string): boolean {
   return isWorkflowCommand(command) && /(^|\s)--approve(\s|$)/.test(command);
 }
 
+const APPROVAL_NEGATION_PATTERNS = [
+  /\bdo\s+not\s+(?:approve|apply)\b/i,
+  /\bdon't\s+(?:approve|apply)\b/i,
+  /\bdont\s+(?:approve|apply)\b/i,
+  /\bnot\s+approved\b/i,
+  /\bnot\s+yet\s+approved\b/i,
+  /\bwithout\s+approval\b/i,
+  /\bwait\s+for\s+approval\b/i,
+  /\bneeds\s+approval\b/i,
+  /\bbefore\s+i\s+approve\b/i,
+  /\buntil\s+i\s+approve\b/i,
+  /\bdon't\s+apply\s+yet\b/i,
+  /\bdo\s+not\s+apply\s+yet\b/i,
+  /\bnot\s+ready\s+to\s+apply\b/i,
+  /\bno\s*,?\s+do\s+not\s+apply\b/i,
+  /\bif\s+approved\b/i,
+];
+
+const APPROVAL_POSITIVE_PATTERNS = [
+  /\bapproved\b/i,
+  /\bapproval\s+granted\b/i,
+  /\byou\s+may\s+apply\b/i,
+  /\bgo\s+ahead\s+and\s+apply\b/i,
+  /\bplease\s+apply\b/i,
+  /\byes\s*,?\s+apply\b/i,
+  /\bapply\s+it\s+now\b/i,
+  /\bapply\s+the\s+pending\b/i,
+  /\bproceed\s+with\s+apply\b/i,
+  /\bproceed\s+with\s+approval\b/i,
+];
+
 function hasExplicitApproval(prompt: string): boolean {
   const text = prompt.toLowerCase();
-  return [
-    "approve",
-    "approved",
-    "you can apply",
-    "please apply",
-    "go ahead and apply",
-    "yes apply",
-    "apply it",
-  ].some((needle) => text.includes(needle));
+  if (APPROVAL_NEGATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
+  return APPROVAL_POSITIVE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function shouldGuard(prompt: string): boolean {

@@ -37,7 +37,6 @@ export type ExtensionState = {
   lastWorkflowRunKind: WorkflowRunKind | null;
   workflowUsageTotals: WorkflowUsageTotals;
   subagentProgress: SubagentProgress;
-  workflowCommandsByCallId: Map<string, string>;
   workflowUiHandledByCallId: Set<string>;
 };
 
@@ -59,7 +58,6 @@ function createExtensionState(): ExtensionState {
     lastWorkflowRunKind: null,
     workflowUsageTotals: createEmptyWorkflowUsageTotals(),
     subagentProgress: createIdleSubagentProgress(),
-    workflowCommandsByCallId: new Map<string, string>(),
     workflowUiHandledByCallId: new Set<string>(),
   };
 }
@@ -104,7 +102,6 @@ function resetWorkflowState(
   state.latestWorkflowResult = null;
   state.lastApplyAudit = null;
   state.workflowPhase = "idle";
-  state.workflowCommandsByCallId.clear();
   state.workflowUiHandledByCallId.clear();
   resetSubagentProgress(state);
   resetWorkflowUsage(state);

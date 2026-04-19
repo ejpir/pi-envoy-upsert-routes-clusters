@@ -1,9 +1,24 @@
-import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   findLatestWorkflowDebugRun,
+  findLatestWorkflowDebugRunFromFile,
   formatWorkflowDebugRun,
   parseWorkflowDebugLog,
 } from "../debug-log-view.ts";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 describe("debug-log-view.ts", () => {
   test("parses jsonl and finds the latest run by runId", () => {
@@ -38,5 +53,21 @@ describe("debug-log-view.ts", () => {
     expect(output).toContain("workflow detections: 1");
     expect(output).toContain("state=WAITING_APPROVAL");
     expect(output).toContain("exit=0");
+  });
+
+  test("finds the latest run from a file without loading the full log into memory", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "upsert-debug-view-"));
+    tempDirs.push(dir);
+    const logPath = path.join(dir, "debug.jsonl");
+    await writeFile(logPath, [
+      JSON.stringify({ timestamp: "2026-04-18T10:00:00Z", runId: "planning-a", runKind: "planning", kind: "subagent_spawn" }),
+      JSON.stringify({ timestamp: "2026-04-18T10:00:01Z", runId: "planning-a", runKind: "planning", kind: "subagent_exit", exitCode: 0 }),
+      JSON.stringify({ timestamp: "2026-04-18T10:01:00Z", runId: "planning-b", runKind: "planning", kind: "subagent_spawn" }),
+      JSON.stringify({ timestamp: "2026-04-18T10:01:01Z", runId: "planning-b", runKind: "planning", kind: "workflow_result_detected", workflowState: "WAITING_APPROVAL" }),
+    ].join("\n"), "utf-8");
+
+    const latestRun = await findLatestWorkflowDebugRunFromFile(logPath);
+    expect(latestRun?.runId).toBe("planning-b");
+    expect(latestRun?.records).toHaveLength(2);
   });
 });

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { bindAbortSignal } from "./abort.ts";
+import type { GuardContext } from "./guard-context.ts";
 import { ROOT, SKILL_COMMAND, SUBAGENT_FALLBACK_EXTENSION_PATH, WORKFLOW_SCRIPT_PATH } from "./constants.ts";
 import {
   cloneUsageStats,
@@ -16,7 +18,7 @@ import type {
 } from "./types.ts";
 
 type RunSkillSubagentOptions = {
-  ctx: any;
+  ctx: GuardContext;
   promptText: string;
   forApply: boolean;
   state: ExtensionState;
@@ -25,14 +27,14 @@ type RunSkillSubagentOptions = {
   ensureSubagentSession: () => Promise<string>;
   getPiInvocation: () => { command: string; args: string[] };
   resetSubagentProgress: () => void;
-  beginWorkflowRun: (ctx: any, command: string) => void;
+  beginWorkflowRun: (ctx: GuardContext, command: string) => void;
   pushSubagentEvent: (message: string) => void;
-  setSubagentProgress: (ctx: any, update: Partial<SubagentProgress>) => void;
-  finalizeWorkflowRun: (ctx: any, workflowResult: UpsertWorkflowResult | null) => void;
+  setSubagentProgress: (ctx: GuardContext, update: Partial<SubagentProgress>) => void;
+  finalizeWorkflowRun: (ctx: GuardContext, workflowResult: UpsertWorkflowResult | null) => void;
   summarizeProgressCommand: (command: string) => string;
   summarizeProgressPath: (path: string) => string;
   summarizeProgressText: (text: string, width?: number) => string;
-  syncWorkflowChrome: (ctx: any) => void;
+  syncWorkflowChrome: (ctx: GuardContext) => void;
   prependSkillCommand?: boolean;
   commandLabel?: string;
   startEvent?: string;
@@ -141,6 +143,15 @@ async function runSkillSubagent(options: RunSkillSubagentOptions): Promise<RunSk
       env: process.env,
     });
 
+    let settled = false;
+    const cleanupAbort = bindAbortSignal(ctx.signal, proc, (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    });
+
     const processLine = (line: string) => {
       const event = parseSubagentEventLine(line);
       if (!event) {
@@ -190,7 +201,7 @@ async function runSkillSubagent(options: RunSkillSubagentOptions): Promise<RunSk
       }
     };
 
-    proc.stdout.on("data", (chunk) => {
+    proc.stdout.on("data", (chunk: unknown) => {
       buffer += String(chunk);
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -198,7 +209,7 @@ async function runSkillSubagent(options: RunSkillSubagentOptions): Promise<RunSk
         processLine(line);
       }
     });
-    proc.stderr.on("data", (chunk) => {
+    proc.stderr.on("data", (chunk: unknown) => {
       const text = String(chunk);
       stderr += text;
       debugLog({
@@ -208,11 +219,24 @@ async function runSkillSubagent(options: RunSkillSubagentOptions): Promise<RunSk
         chunk: text,
       });
     });
-    proc.on("error", reject);
-    proc.on("close", (code) => {
+    proc.on("error", (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanupAbort();
+      reject(error);
+    });
+    proc.on("close", (code: number | null) => {
       if (buffer.trim()) {
         processLine(buffer);
       }
+      if (settled) {
+        cleanupAbort();
+        return;
+      }
+      settled = true;
+      cleanupAbort();
       resolve(code ?? 1);
     });
   });

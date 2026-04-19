@@ -22,13 +22,15 @@ describe("fallback-tool-policy.ts", () => {
     expect(isAllowedFallbackDocRead(".pi/skills/envoy-route-cluster-upsert/docs/USAGE.md", ROOT)).toBe(false);
   });
 
-  test("resolves allowed doc paths and detects repeated reads", () => {
+  test("resolves allowed doc paths, supports @path, and detects repeated reads", () => {
     const allowedDoc = Array.from(DOC_READS)[0]!;
     const relativeAllowedDoc = allowedDoc.startsWith(`${ROOT}/`) ? allowedDoc.slice(ROOT.length + 1) : allowedDoc;
     const seenPaths = new Set<string>([allowedDoc]);
 
     expect(resolveAllowedFallbackDocReadPath(relativeAllowedDoc, ROOT)).toBe(allowedDoc);
+    expect(resolveAllowedFallbackDocReadPath(`@${relativeAllowedDoc}`, ROOT)).toBe(allowedDoc);
     expect(isRepeatedFallbackDocRead(relativeAllowedDoc, ROOT, seenPaths)).toBe(true);
+    expect(isRepeatedFallbackDocRead(`@${relativeAllowedDoc}`, ROOT, seenPaths)).toBe(true);
     expect(isRepeatedFallbackDocRead(".pi/skills/envoy-route-cluster-upsert/docs/USAGE.md", ROOT, seenPaths)).toBe(false);
   });
 });

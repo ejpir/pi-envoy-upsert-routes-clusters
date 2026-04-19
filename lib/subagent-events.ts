@@ -17,8 +17,30 @@ export type SubagentEventTracking = {
   lastAssistantText: string;
 };
 
+type SubagentMessage = {
+  role?: string;
+  usage?: unknown;
+  content?: Array<{ type?: string; text?: string }>;
+};
+
+type SubagentMessageEvent = {
+  delta?: string;
+};
+
+type SubagentEvent = {
+  type?: string;
+  toolName?: string;
+  args?: {
+    path?: string;
+    command?: string;
+  };
+  result?: unknown;
+  message?: SubagentMessage;
+  assistantMessageEvent?: SubagentMessageEvent;
+};
+
 type ProcessSubagentEventOptions = {
-  event: any;
+  event: SubagentEvent;
   state: ExtensionState;
   tracking: SubagentEventTracking;
   beginWorkflowRun: (command: string) => void;
@@ -30,13 +52,18 @@ type ProcessSubagentEventOptions = {
   summarizeProgressText: (text: string, width?: number) => string;
 };
 
-function parseSubagentEventLine(line: string): any | null {
+function isSubagentEvent(value: unknown): value is SubagentEvent {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseSubagentEventLine(line: string): SubagentEvent | null {
   if (!line.trim()) {
     return null;
   }
 
   try {
-    return JSON.parse(line);
+    const parsed: unknown = JSON.parse(line);
+    return isSubagentEvent(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -166,3 +193,4 @@ function processSubagentEvent(options: ProcessSubagentEventOptions): void {
 }
 
 export { parseSubagentEventLine, processSubagentEvent };
+export type { SubagentEvent };

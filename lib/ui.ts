@@ -1,4 +1,5 @@
 import { Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import type { GuardContext, GuardCustomUiController } from "./guard-context.ts";
 import {
   WORKFLOW_DASHBOARD_WIDTH,
   WORKFLOW_DEBUG_LOG_PATH,
@@ -11,6 +12,7 @@ import {
   summarizeSelectableWorkflowItem,
   type SelectableWorkflowItem,
 } from "./selection.ts";
+import { formatPreviewRouteLine } from "./preview-env-tags.ts";
 import { truncate, summarizeProgressCommand, summarizeProgressPath, summarizeProgressText } from "./progress.ts";
 import {
   formatTokenCount,
@@ -23,6 +25,7 @@ import type {
   DecisionRow,
   SubagentProgress,
   ThemeLike,
+  UpsertPlanItem,
   UpsertRouteDecision,
   UpsertWorkflowResult,
   UsageStats,
@@ -142,6 +145,65 @@ function appendSelectionBlock(
   });
 }
 
+function appendSelectionDetailBlock(
+  lines: string[],
+  result: UpsertWorkflowResult,
+  theme: ThemeLike | undefined,
+  selectableItems: SelectableWorkflowItem[],
+  selectionCursor: number,
+): void {
+  lines.push(section(theme, "Selection detail", WORKFLOW_DASHBOARD_WIDTH));
+  if (selectableItems.length === 0) {
+    lines.push(`  ${themed(theme, "dim", "Move through selection items to inspect route and cluster details")}`);
+    return;
+  }
+
+  const selected = selectableItems[selectionCursor];
+  const item = selected ? result.check?.payload?.items?.[selected.itemIndex] as UpsertPlanItem | undefined : undefined;
+  if (!selected || !item) {
+    lines.push(`  ${themed(theme, "dim", "No selected item details available")}`);
+    return;
+  }
+
+  const matchingRoutes = (result.additions?.routes ?? []).filter((route) => {
+    const sameContext = route.context === item.context;
+    const sameCluster = !item.cluster || !route.cluster || route.cluster === item.cluster;
+    return sameContext && sameCluster;
+  });
+  const matchingClusters = (result.additions?.clusters ?? []).filter((cluster) => cluster.name === item.cluster);
+
+  lines.push(`  ${themed(theme, "accent", "Context: ")}${themed(theme, "text", item.context ?? "(none)")}`);
+  lines.push(`  ${themed(theme, "accent", "Flavor: ")}${themed(theme, "text", `${item.flavor ?? "(unknown)"} / ${item.match_mode ?? "(unknown)"}`)}`);
+  lines.push(`  ${themed(theme, "accent", "Cluster: ")}${themed(theme, "text", item.cluster ?? "(unknown)")}`);
+  if (item.cluster_host) {
+    lines.push(`  ${themed(theme, "accent", "Forward host: ")}${themed(theme, "text", item.cluster_host)}`);
+  }
+  if ((item.warnings ?? []).length > 0) {
+    lines.push(`  ${themed(theme, "accent", "Item warnings: ")}${themed(theme, "warning", String((item.warnings ?? []).length))}`);
+  }
+
+  if (matchingRoutes.length === 0 && matchingClusters.length === 0) {
+    lines.push(`  ${themed(theme, "dim", "No concrete additions available for preview")}`);
+    return;
+  }
+
+  lines.push(`  ${themed(theme, "accent", "Preview:")}`);
+  matchingRoutes.slice(0, 4).forEach((route) => {
+    lines.push(`    ${themed(theme, "success", formatListItem(formatPreviewRouteLine(route), WORKFLOW_DASHBOARD_WIDTH - 8))}`);
+  });
+  if (matchingRoutes.length > 4) {
+    lines.push(`    ${themed(theme, "dim", `+ ${matchingRoutes.length - 4} more route addition(s)`)}`);
+  }
+
+  matchingClusters.slice(0, 2).forEach((cluster) => {
+    const diffLine = `+ cluster ${cluster.name ?? "(unnamed)"} -> ${cluster.host ?? "(no host)"}`;
+    lines.push(`    ${themed(theme, "success", formatListItem(diffLine, WORKFLOW_DASHBOARD_WIDTH - 8))}`);
+  });
+  if (matchingClusters.length > 2) {
+    lines.push(`    ${themed(theme, "dim", `+ ${matchingClusters.length - 2} more cluster addition(s)`)}`);
+  }
+}
+
 function buildWorkflowDetailsLines(
   result: UpsertWorkflowResult,
   theme: ThemeLike | undefined,
@@ -222,6 +284,7 @@ function buildWorkflowDetailsLines(
 
   if (allowAction) {
     appendSelectionBlock(lines, theme, selectableItems, selectedItemIndexes, selectionCursor);
+    appendSelectionDetailBlock(lines, result, theme, selectableItems, selectionCursor);
   }
 
   lines.push(section(theme, "Decisions", width));
@@ -280,12 +343,12 @@ function buildWorkflowDetailsLines(
   }
 
   lines.push(section(theme, "Action", width));
-  lines.push(themed(theme, "dim", allowAction ? "Use a/c keys in this workflow UI to choose apply or cancel." : "No pending approval required for this result."));
+  lines.push(themed(theme, "dim", allowAction ? "Use a/c keys in this workflow UI to choose apply or cancel. The highlighted item shows a drill-down preview above." : "No pending approval required for this result."));
   return lines;
 }
 
 function requestWorkflowUi(
-  ctx: any,
+  ctx: GuardContext,
   workflowResult: UpsertWorkflowResult,
   forApproval: boolean,
   lastRunUsage: UsageStats | null | undefined,
@@ -293,7 +356,7 @@ function requestWorkflowUi(
   lastRunKind: WorkflowRunKind | null,
   lastApplyAudit?: ApplyAuditTrail | null,
 ): Promise<ApprovalChoice | undefined> {
-  return ctx.ui.custom<ApprovalChoice | undefined>((tui, theme, _kb, done) => {
+  return ctx.ui.custom<ApprovalChoice | undefined>((tui: GuardCustomUiController, theme, _kb, done) => {
     let scrollOffset = 0;
     const selectableItems = collectSelectableWorkflowItems(workflowResult);
     const selectedItemIndexes = new Set(selectableItems.map((item) => item.itemIndex));

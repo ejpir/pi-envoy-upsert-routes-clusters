@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { WORKFLOW_SCRIPT_PATH } from "../constants.ts";
 import {
+  hasExplicitApproval,
   isAllowedWorkflowCommand,
   isApproveWorkflowCommand,
   parseWorkflowResult,
@@ -74,7 +75,7 @@ describe("workflow.ts", () => {
         state: "ERROR",
         status: "error",
         error_kind: "runtime_error",
-        message: "No virtual host matched regex ^dtap_.",
+        message: "No virtual host matched regex ^dtap_ .",
       },
       exitCode: 1,
     })).toBe(false);
@@ -87,5 +88,16 @@ describe("workflow.ts", () => {
       },
       exitCode: 2,
     })).toBe(false);
+  });
+
+  test("accepts strong explicit approval phrases", () => {
+    expect(hasExplicitApproval("Approved, you may apply the pending envoy changes now.")).toBe(true);
+    expect(hasExplicitApproval("Go ahead and apply it.")).toBe(true);
+  });
+
+  test("rejects negated or conditional approval phrases", () => {
+    expect(hasExplicitApproval("Do not apply until I approve.")).toBe(false);
+    expect(hasExplicitApproval("This is not approved yet.")).toBe(false);
+    expect(hasExplicitApproval("If approved later, apply it.")).toBe(false);
   });
 });

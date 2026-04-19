@@ -16,7 +16,6 @@ describe("state.ts", () => {
     expect(state.guardEnabled).toBe(false);
     expect(state.workflowPhase).toBe("idle");
     expect(state.subagentProgress.status).toBe("Idle");
-    expect(state.workflowCommandsByCallId.size).toBe(0);
     expect(state.workflowUiHandledByCallId.size).toBe(0);
   });
 
@@ -77,7 +76,6 @@ describe("state.ts", () => {
     state.workflowAttempted = true;
     state.approvalDenied = true;
     state.blockedCount = 7;
-    state.workflowCommandsByCallId.set("call-1", "cmd");
     state.workflowUiHandledByCallId.add("call-1");
     state.workflowUsageTotals.cumulative.input = 123;
     state.lastApplyAudit = {
@@ -107,7 +105,6 @@ describe("state.ts", () => {
     expect(state.approvalGranted).toBe(true);
     expect(state.approvalDenied).toBe(false);
     expect(state.blockedCount).toBe(0);
-    expect(state.workflowCommandsByCallId.size).toBe(0);
     expect(state.workflowUiHandledByCallId.size).toBe(0);
     expect(state.workflowUsageTotals.cumulative.input).toBe(0);
     expect(state.lastApplyAudit).toBeNull();

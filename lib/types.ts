@@ -62,6 +62,11 @@ export type ApprovalChoice =
   | { action: "apply"; selectedItemIndexes: number[] }
   | { action: "cancel" };
 
+export type UpsertWorkflowToolInput = {
+  requestText: string;
+  approve?: boolean;
+};
+
 export type ApplyAuditTrail = {
   mode: "direct";
   timestamp: string;

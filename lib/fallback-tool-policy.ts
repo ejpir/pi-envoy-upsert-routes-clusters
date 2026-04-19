@@ -1,12 +1,26 @@
-import path from "node:path";
+import { existsSync, realpathSync } from "node:fs";
 import { DOC_READS } from "./constants.ts";
+import { resolvePathArgument } from "./path-utils.ts";
+
+const CANONICAL_DOC_READS = new Set(
+  Array.from(DOC_READS).map((filePath) => {
+    if (!existsSync(filePath)) {
+      return filePath;
+    }
+    try {
+      return realpathSync.native(filePath);
+    } catch {
+      return filePath;
+    }
+  }),
+);
 
 function resolveAllowedFallbackDocReadPath(requestedPath: string, cwd: string): string | null {
-  if (!requestedPath.trim()) {
+  const resolvedPath = resolvePathArgument(requestedPath, cwd);
+  if (!resolvedPath) {
     return null;
   }
-  const resolvedPath = path.resolve(cwd, requestedPath);
-  return DOC_READS.has(resolvedPath) ? resolvedPath : null;
+  return CANONICAL_DOC_READS.has(resolvedPath) ? resolvedPath : null;
 }
 
 function isAllowedFallbackDocRead(requestedPath: string, cwd: string): boolean {
@@ -23,6 +37,7 @@ function isRepeatedFallbackDocRead(
 }
 
 export {
+  CANONICAL_DOC_READS,
   isAllowedFallbackDocRead,
   isRepeatedFallbackDocRead,
   resolveAllowedFallbackDocReadPath,

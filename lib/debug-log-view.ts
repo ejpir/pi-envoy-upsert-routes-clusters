@@ -1,3 +1,7 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import readline from "node:readline";
+
 type WorkflowDebugRecord = {
   timestamp?: string;
   runId?: string | null;
@@ -21,42 +25,119 @@ type WorkflowDebugRun = {
   records: WorkflowDebugRecord[];
 };
 
+function parseWorkflowDebugRecord(line: string): WorkflowDebugRecord | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as WorkflowDebugRecord;
+    }
+  } catch {
+    // ignore malformed lines
+  }
+  return null;
+}
+
 function parseWorkflowDebugLog(text: string): WorkflowDebugRecord[] {
   const records: WorkflowDebugRecord[] = [];
   for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        records.push(parsed as WorkflowDebugRecord);
-      }
-    } catch {
-      // ignore malformed lines
+    const parsed = parseWorkflowDebugRecord(line);
+    if (parsed) {
+      records.push(parsed);
     }
   }
   return records;
 }
 
 function findLatestWorkflowDebugRun(records: WorkflowDebugRecord[]): WorkflowDebugRun | null {
-  for (let index = records.length - 1; index >= 0; index -= 1) {
-    const runId = records[index]?.runId;
-    if (typeof runId !== "string" || !runId) {
+  let latestRunId: string | null = null;
+  let latestRunKind: string | null = null;
+  const latestRunRecords: WorkflowDebugRecord[] = [];
+
+  for (const record of records) {
+    const runId = typeof record.runId === "string" && record.runId ? record.runId : null;
+    if (!runId) {
       continue;
     }
 
-    const runRecords = records.filter((record) => record.runId === runId);
-    const runKind = runRecords.find((record) => typeof record.runKind === "string")?.runKind ?? null;
-    return {
-      runId,
-      runKind,
-      records: runRecords,
-    };
+    if (latestRunId === null || runId !== latestRunId) {
+      latestRunId = runId;
+      latestRunKind = typeof record.runKind === "string" ? record.runKind : null;
+      latestRunRecords.length = 0;
+    }
+
+    if (runId === latestRunId) {
+      latestRunRecords.push(record);
+      if (!latestRunKind && typeof record.runKind === "string") {
+        latestRunKind = record.runKind;
+      }
+    }
   }
 
-  return null;
+  if (!latestRunId) {
+    return null;
+  }
+
+  return {
+    runId: latestRunId,
+    runKind: latestRunKind,
+    records: [...latestRunRecords],
+  };
+}
+
+async function findLatestWorkflowDebugRunFromFile(logPath: string): Promise<WorkflowDebugRun | null> {
+  const fileStats = await stat(logPath);
+  if (fileStats.size === 0) {
+    return null;
+  }
+
+  const stream = createReadStream(logPath, { encoding: "utf-8" });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+  let latestRunId: string | null = null;
+  let latestRunKind: string | null = null;
+  const latestRunRecords: WorkflowDebugRecord[] = [];
+
+  try {
+    for await (const line of rl) {
+      const record = parseWorkflowDebugRecord(line);
+      if (!record) {
+        continue;
+      }
+
+      const runId = typeof record.runId === "string" && record.runId ? record.runId : null;
+      if (!runId) {
+        continue;
+      }
+
+      if (latestRunId === null || runId !== latestRunId) {
+        latestRunId = runId;
+        latestRunKind = typeof record.runKind === "string" ? record.runKind : null;
+        latestRunRecords.length = 0;
+      }
+
+      latestRunRecords.push(record);
+      if (!latestRunKind && typeof record.runKind === "string") {
+        latestRunKind = record.runKind;
+      }
+    }
+  } finally {
+    rl.close();
+    stream.close();
+  }
+
+  if (!latestRunId) {
+    return null;
+  }
+
+  return {
+    runId: latestRunId,
+    runKind: latestRunKind,
+    records: [...latestRunRecords],
+  };
 }
 
 function summarizeValue(value: unknown, width = 120): string {
@@ -128,6 +209,7 @@ function formatWorkflowDebugRun(run: WorkflowDebugRun): string {
 
 export {
   findLatestWorkflowDebugRun,
+  findLatestWorkflowDebugRunFromFile,
   formatWorkflowDebugRun,
   parseWorkflowDebugLog,
 };

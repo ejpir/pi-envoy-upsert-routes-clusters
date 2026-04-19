@@ -26,7 +26,7 @@ The extension code is installed globally, and it operates against the **current 
 ## What it does
 
 - intercepts likely Envoy upsert requests before the normal agent loop freelances
-- prefers **direct workflow planning** via `run_workflow.py --json`
+- prefers **direct workflow planning** via the custom `upsert_workflow_run` tool, which shells out to `run_workflow.py --json` without exposing workflow bash permissioning to the model
 - falls back to **model normalization only** when the input is ambiguous or malformed
 - keeps the skill/workflow script authoritative for the actual plan/apply result
 - shows a custom workflow dashboard with:
@@ -35,7 +35,7 @@ The extension code is installed globally, and it operates against the **current 
   - usage totals
   - warnings
   - last direct-apply audit
-- supports **per-item selection** before apply
+- supports **per-item selection** before apply, with a highlighted-item drill-down preview in the dashboard
 - performs apply as **direct workflow execution** with **no model usage**
 - writes append-only debug and audit logs
 
@@ -58,9 +58,11 @@ The extension code is installed globally, and it operates against the **current 
 
 1. User reviews the dashboard.
 2. User can keep/remove selected items.
-3. Apply runs directly:
-   - `python3 ~/.pi/agent/skills/envoy-route-cluster-upsert/scripts/run_workflow.py --request-file <tmp> --json --approve`
+3. Apply runs directly through the guarded tool path:
+   - internally this shells out to `python3 ~/.pi/agent/skills/envoy-route-cluster-upsert/scripts/run_workflow.py --request-file <tmp> --json --approve`
 4. The extension records an audit entry.
+
+Both direct workflow execution and fallback subagent execution are abort-aware and follow pi cancellation via `ctx.signal`.
 
 ## Safety model
 
@@ -69,6 +71,8 @@ The extension is intentionally restrictive.
 ### Allowed routine reads
 
 Only these docs are treated as approved routine reads for fallback normalization:
+
+> Path arguments are canonicalized, and leading `@` path sigils are normalized before allowlist checks.
 
 - `~/.pi/agent/skills/envoy-route-cluster-upsert/SKILL.md`
 - `~/.pi/agent/skills/envoy-route-cluster-upsert/docs/PLAYBOOK.md`
@@ -86,7 +90,9 @@ The extension blocks or discourages:
 - inspecting skill scripts/tests during routine use
 - `ls`, `find`, `rg`, `grep` exploration of the skill directory
 - reading `USAGE.md` / `ARCHITECTURE.md` during routine guarded use
-- applying with `--approve` before explicit user approval
+- direct workflow bash execution; guarded runs must use the custom `upsert_workflow_run` tool
+- `edit` / `write` freelancing while the guard is active
+- applying before explicit user approval via the dashboard or an explicit approval phrase in the current prompt
 - reading the template before the first workflow attempt
 
 ### Authoritative boundary
@@ -115,6 +121,7 @@ The extension activates for prompts that look like Envoy upsert requests, for ex
   - insert a `tail` command for the debug log into the editor
 - `/upsert-workflow-debug-last`
   - open a formatted summary of the latest debug run in the editor
+  - reads the debug log in a streaming/file-based way so large append-only logs stay manageable
 
 ### Approval UI keys
 
